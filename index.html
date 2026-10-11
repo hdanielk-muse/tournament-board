@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0d1117">
+<title>골프 대회 순위표</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{background:#0d1117;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;min-height:100vh;padding:12px;max-width:640px;margin:0 auto}
+h1{font-size:20px;text-align:center;margin:8px 0 4px}
+.sub{text-align:center;color:#888;font-size:13px;margin-bottom:14px}
+.section{background:#161b22;border:1px solid #2a2f3a;border-radius:12px;padding:14px;margin-bottom:12px}
+.section h2{font-size:16px;margin-bottom:10px}
+textarea{width:100%;height:120px;font-size:15px;padding:10px;border-radius:8px;border:1px solid #2a2f3a;background:#0d1117;color:#fff;resize:vertical}
+.btn{width:100%;padding:14px;font-size:16px;font-weight:700;border:none;border-radius:10px;background:#1f6feb;color:#fff;cursor:pointer;margin-top:10px}
+.btn:active{transform:scale(.98)}
+.btn.danger{background:#3a1a1a;border:1px solid #6b2222;color:#ff7b72}
+.btn.small{width:auto;padding:8px 16px;font-size:14px;margin-top:0}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{padding:10px 6px;border-bottom:1px solid #2a2f3a;text-align:center}
+th{color:#888;font-size:13px;position:sticky;top:0;background:#161b22}
+td.name{text-align:left;font-weight:700;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+input.score{width:64px;font-size:17px;padding:10px 4px;text-align:center;border-radius:8px;border:1px solid #2a2f3a;background:#0d1117;color:#fff}
+.total{font-weight:900;font-size:17px}
+.rank-1{background:#3a2f0a}.rank-2{background:#2a2f3a}.rank-3{background:#2a1f0f}
+.rank-badge{display:inline-block;min-width:34px;padding:4px 8px;border-radius:8px;font-weight:900}
+.r1{background:#ffd700;color:#000}.r2{background:#c0c0c0;color:#000}.r3{background:#cd7f32;color:#000}.rx{background:#2a2f3a;color:#fff}
+.del{background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:4px}
+#count{text-align:center;color:#888;font-size:14px;margin-bottom:8px}
+#err,#ok{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:10px;font-size:15px;display:none;z-index:20}
+#err{background:#6b2222}#ok{background:#1a6b2a}
+.empty{text-align:center;color:#666;padding:30px;font-size:15px}
+</style>
+</head>
+<body>
+<h1>🏆 골프 대회 순위표</h1>
+<div class="sub" id="mode-sub">스크린 + 필드 합산</div>
+
+<div class="section">
+<div style="display:flex;gap:8px;margin-bottom:10px">
+<input id="event-date" type="date" style="flex:1;font-size:15px;padding:12px;border-radius:8px;border:1px solid #2a2f3a;background:#0d1117;color:#fff;color-scheme:dark">
+</div>
+<input id="event-course" placeholder="골프장 이름 (예: Pelham Hills)" style="width:100%;font-size:15px;padding:12px;border-radius:8px;border:1px solid #2a2f3a;background:#0d1117;color:#fff">
+</div>
+
+<div class="section">
+<div style="display:flex;gap:8px">
+<button id="mode-both" class="btn small" style="flex:1" onclick="setMode('both')">스크린+필드</button>
+<button id="mode-field" class="btn small" style="flex:1;background:#2a2f3a" onclick="setMode('field')">필드만</button>
+</div>
+</div>
+
+<div class="section">
+<h2>참가자 등록</h2>
+<textarea id="names-input" placeholder="한 줄에 한 명씩 붙여넣기&#10;예:&#10;김철수&#10;이영희&#10;박민수"></textarea>
+<button class="btn" onclick="addBulk()">일괄 등록</button>
+<div style="display:flex;gap:8px;margin-top:10px">
+<input id="name-one" placeholder="이름" style="flex:1;font-size:15px;padding:12px;border-radius:8px;border:1px solid #2a2f3a;background:#0d1117;color:#fff">
+<button class="btn small" onclick="addOne()">추가</button>
+</div>
+</div>
+
+<div id="count"></div>
+<div class="section" style="padding:6px">
+<table>
+<thead><tr><th>순위</th><th style="text-align:left">이름</th><th>스크린</th><th>필드</th><th>합계</th><th></th></tr></thead>
+<tbody id="tbody"></tbody>
+</table>
+<div id="empty" class="empty">참가자를 등록해줘</div>
+</div>
+
+<div class="section">
+<button class="btn danger" onclick="clearAll()">🗑 전체 삭제</button>
+</div>
+
+<div id="err"></div><div id="ok"></div>
+<script>
+const LS_KEY="tournament-scores-v1";
+const MODE_KEY="tournament-mode-v1";
+const EVENT_KEY="tournament-event-v1";
+let players=[]; // {id,name,screen,field}
+let mode="both"; // both | field
+
+function load(){try{const s=localStorage.getItem(LS_KEY);if(s)players=JSON.parse(s);}catch(e){players=[];}try{const m=localStorage.getItem(MODE_KEY);if(m)mode=m;}catch(e){}}
+function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(players));}catch(e){}}
+function saveMode(){try{localStorage.setItem(MODE_KEY,mode);}catch(e){}}
+function setMode(m){mode=m;saveMode();render();}
+function saveEvent(){
+ try{
+  localStorage.setItem(EVENT_KEY,JSON.stringify({
+   date:document.getElementById("event-date").value,
+   course:document.getElementById("event-course").value
+  }));
+ }catch(e){}
+ updateHeader();
+}
+function loadEvent(){
+ try{
+  const s=localStorage.getItem(EVENT_KEY);
+  if(s){const e=JSON.parse(s);
+   document.getElementById("event-date").value=e.date||"";
+   document.getElementById("event-course").value=e.course||"";
+  }
+ }catch(e){}
+ updateHeader();
+}
+function updateHeader(){
+ const d=document.getElementById("event-date").value;
+ const c=document.getElementById("event-course").value.trim();
+ let parts=[];
+ if(d)parts.push(d);
+ if(c)parts.push(c);
+ document.getElementById("mode-sub").textContent=(parts.length?parts.join(" · ")+" — ":"")+(mode==="both"?"스크린 + 필드 합산":"필드 점수");
+}
+function showErr(m){const e=document.getElementById("err");e.textContent=m;e.style.display="block";clearTimeout(showErr.t);showErr.t=setTimeout(()=>e.style.display="none",2500);}
+function showOk(m){const e=document.getElementById("ok");e.textContent=m;e.style.display="block";clearTimeout(showOk.t);showOk.t=setTimeout(()=>e.style.display="none",2500);}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+
+function addBulk(){
+ const text=document.getElementById("names-input").value;
+ const names=text.split("\n").map(n=>n.trim()).filter(n=>n);
+ if(!names.length){showErr("이름을 입력해줘");return;}
+ const existing=new Set(players.map(p=>p.name));
+ let added=0;
+ names.forEach(n=>{if(!existing.has(n)){players.push({id:uid(),name:n,screen:null,field:null});existing.add(n);added++;}});
+ document.getElementById("names-input").value="";
+ save();render();showOk(added+"명 등록됨");
+}
+function addOne(){
+ const n=document.getElementById("name-one").value.trim();
+ if(!n){showErr("이름을 입력해줘");return;}
+ if(players.some(p=>p.name===n)){showErr("이미 있어");return;}
+ players.push({id:uid(),name:n,screen:null,field:null});
+ document.getElementById("name-one").value="";
+ save();render();showOk(n+" 등록됨");
+}
+function delPlayer(id){
+ players=players.filter(p=>p.id!==id);
+ save();render();
+}
+function setName(id,val){
+ const p=players.find(x=>x.id===id);if(!p)return;
+ const n=val.trim();if(!n)return;
+ p.name=n;save();render();
+}
+function setScore(id,which,val){
+ const p=players.find(x=>x.id===id);if(!p)return;
+ const v=parseInt(val);
+ p[which]=(isNaN(v)||v<0)?null:v;
+ save();render();
+}
+function total(p){
+ if(mode==="field")return p.field;
+ if(p.screen==null||p.field==null)return null;
+ return p.screen+p.field;
+}
+function clearAll(){
+ if(!players.length)return;
+ if(!confirm("전부 지울까?"))return;
+ players=[];save();render();
+}
+function rankBadge(rank){
+ if(rank===1)return '<span class="rank-badge r1">1</span>';
+ if(rank===2)return '<span class="rank-badge r2">2</span>';
+ if(rank===3)return '<span class="rank-badge r3">3</span>';
+ return '<span class="rank-badge rx">'+rank+'</span>';
+}
+function render(){
+ const mb=document.getElementById("mode-both"),mf=document.getElementById("mode-field");
+ mb.style.background=mode==="both"?"#1f6feb":"#2a2f3a";
+ mf.style.background=mode==="field"?"#1f6feb":"#2a2f3a";
+ document.getElementById("mode-sub").textContent=mode==="both"?"스크린 + 필드 합산":"필드 점수";
+ updateHeader();
+ // 테이블 헤더
+ const thead=document.querySelector("thead tr");
+ thead.innerHTML=mode==="both"
+  ?'<th>순위</th><th style="text-align:left">이름</th><th>스크린</th><th>필드</th><th>합계</th><th></th>'
+  :'<th>순위</th><th style="text-align:left">이름</th><th>필드</th><th>점수</th><th></th>';
+ const tb=document.getElementById("tbody");
+ document.getElementById("count").textContent=players.length?`참가자 ${players.length}명`:"";
+ document.getElementById("empty").style.display=players.length?"none":"block";
+ if(!players.length){tb.innerHTML="";return;}
+ // 합계 낮은 순 정렬 (합계 없는 사람은 맨 뒤)
+ const sorted=[...players].sort((a,b)=>{
+  const ta=total(a),tb2=total(b);
+  if(ta==null&&tb2==null)return a.name.localeCompare(b.name,"ko");
+  if(ta==null)return 1;if(tb2==null)return -1;
+  return ta-tb2;
+ });
+ // 공동 순위 계산
+ let html="",prevTotal=null,prevRank=0;
+ sorted.forEach((p,i)=>{
+  const t=total(p);
+  let rank;
+  if(t==null){rank="-";}
+  else if(t===prevTotal){rank=prevRank;}
+  else{rank=i+1;prevTotal=t;prevRank=rank;}
+  const rowCls=rank===1?"rank-1":rank===2?"rank-2":rank===3?"rank-3":"";
+  const screenCell=mode==="both"?`<td><input class="score" type="number" inputmode="numeric" placeholder="-" value="${p.screen??""}" onchange="setScore('${p.id}','screen',this.value)"></td>`:"";
+  html+=`<tr class="${rowCls}">`
+   +`<td>${rank==="-"?"-":rankBadge(rank)}</td>`
+   +`<td><input class="score" type="text" style="width:90px;font-size:15px" value="${p.name}" onchange="setName('${p.id}',this.value)"></td>`
+   +screenCell
+   +`<td><input class="score" type="number" inputmode="numeric" placeholder="-" value="${p.field??""}" onchange="setScore('${p.id}','field',this.value)"></td>`
+   +`<td class="total">${t??"-"}</td>`
+   +`<td><button class="del" onclick="delPlayer('${p.id}')">×</button></td>`
+   +`</tr>`;
+ });
+ tb.innerHTML=html;
+}
+load();loadEvent();render();
+document.getElementById("event-date").addEventListener("change",saveEvent);
+document.getElementById("event-course").addEventListener("change",saveEvent);
+if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(()=>{});}
+</script>
+</body>
+</html>
