@@ -63,7 +63,11 @@ input.score{width:64px;font-size:17px;padding:10px 4px;text-align:center;border-
 </div>
 
 <div id="count"></div>
-<div class="section" style="padding:6px">
+<div class="section" style="padding:10px">
+<div style="display:flex;gap:8px;margin-bottom:10px">
+<input id="search" placeholder="🔍 이름 검색" oninput="applySearch()" style="flex:1;font-size:15px;padding:12px;border-radius:8px;border:1px solid #2a2f3a;background:#0d1117;color:#fff">
+<button id="sort-btn" class="btn small" style="white-space:nowrap" onclick="toggleSort()">이름순</button>
+</div>
 <table>
 <thead><tr><th>순위</th><th style="text-align:left">이름</th><th>스크린</th><th>필드</th><th>합계</th><th></th></tr></thead>
 <tbody id="tbody"></tbody>
@@ -82,11 +86,23 @@ const MODE_KEY="tournament-mode-v1";
 const EVENT_KEY="tournament-event-v1";
 let players=[]; // {id,name,screen,field}
 let mode="both"; // both | field
+let sortBy="rank"; // rank | name
+let searchQuery="";
 
 function load(){try{const s=localStorage.getItem(LS_KEY);if(s)players=JSON.parse(s);}catch(e){players=[];}try{const m=localStorage.getItem(MODE_KEY);if(m)mode=m;}catch(e){}}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(players));}catch(e){}}
 function saveMode(){try{localStorage.setItem(MODE_KEY,mode);}catch(e){}}
 function setMode(m){mode=m;saveMode();render();}
+function toggleSort(){sortBy=sortBy==="rank"?"name":"rank";render();}
+function applySearch(){
+ searchQuery=document.getElementById("search").value.trim();
+ const rows=document.querySelectorAll("#tbody tr");
+ rows.forEach(tr=>{
+  const nameInput=tr.querySelector('input[type="text"]');
+  const name=nameInput?nameInput.value:"";
+  tr.style.display=(!searchQuery||name.includes(searchQuery))?"":"none";
+ });
+}
 function saveEvent(){
  try{
   localStorage.setItem(EVENT_KEY,JSON.stringify({
@@ -171,32 +187,45 @@ function render(){
  const mb=document.getElementById("mode-both"),mf=document.getElementById("mode-field");
  mb.style.background=mode==="both"?"#1f6feb":"#2a2f3a";
  mf.style.background=mode==="field"?"#1f6feb":"#2a2f3a";
- document.getElementById("mode-sub").textContent=mode==="both"?"스크린 + 필드 합산":"필드 점수";
- updateHeader();
- // 테이블 헤더
+ document.getElementById("sort-btn").textContent=sortBy==="rank"?"이름순":"순위순";
+ searchQuery=document.getElementById("search").value.trim();
+ // 테이블 헤더는 모드가 바뀔 때만 갱신 (검색 입력 중 DOM 변경 최소화)
  const thead=document.querySelector("thead tr");
- thead.innerHTML=mode==="both"
+ const wantHead=mode==="both"
   ?'<th>순위</th><th style="text-align:left">이름</th><th>스크린</th><th>필드</th><th>합계</th><th></th>'
   :'<th>순위</th><th style="text-align:left">이름</th><th>필드</th><th>점수</th><th></th>';
+ if(thead.innerHTML!==wantHead)thead.innerHTML=wantHead;
  const tb=document.getElementById("tbody");
  document.getElementById("count").textContent=players.length?`참가자 ${players.length}명`:"";
  document.getElementById("empty").style.display=players.length?"none":"block";
  if(!players.length){tb.innerHTML="";return;}
- // 합계 낮은 순 정렬 (합계 없는 사람은 맨 뒤)
- const sorted=[...players].sort((a,b)=>{
+ // 순위 계산용: 합계 낮은 순 (전체 기준)
+ const ranked=[...players].sort((a,b)=>{
   const ta=total(a),tb2=total(b);
-  if(ta==null&&tb2==null)return a.name.localeCompare(b.name,"ko");
+  if(ta==null&&tb2==null)return 0;
   if(ta==null)return 1;if(tb2==null)return -1;
   return ta-tb2;
  });
- // 공동 순위 계산
- let html="",prevTotal=null,prevRank=0;
- sorted.forEach((p,i)=>{
+ const rankMap={};let prevTotal=null,prevRank=0;
+ ranked.forEach((p,i)=>{
   const t=total(p);
-  let rank;
-  if(t==null){rank="-";}
-  else if(t===prevTotal){rank=prevRank;}
-  else{rank=i+1;prevTotal=t;prevRank=rank;}
+  if(t==null){rankMap[p.id]="-";}
+  else if(t===prevTotal){rankMap[p.id]=prevRank;}
+  else{rankMap[p.id]=i+1;prevTotal=t;prevRank=i+1;}
+ });
+ // 표시 순서: 검색 필터 + 정렬
+ let shown=players.filter(p=>!searchQuery||p.name.includes(searchQuery));
+ if(sortBy==="name"){shown=[...shown].sort((a,b)=>a.name.localeCompare(b.name,"ko"));}
+ else{shown=[...shown].sort((a,b)=>{
+  const ra=rankMap[a.id],rb=rankMap[b.id];
+  if(ra==="-"&&rb==="-")return a.name.localeCompare(b.name,"ko");
+  if(ra==="-")return 1;if(rb==="-")return -1;
+  return ra-rb;
+ });}
+ let html="";
+ shown.forEach(p=>{
+  const t=total(p);
+  const rank=rankMap[p.id];
   const rowCls=rank===1?"rank-1":rank===2?"rank-2":rank===3?"rank-3":"";
   const screenCell=mode==="both"?`<td><input class="score" type="number" inputmode="numeric" placeholder="-" value="${p.screen??""}" onchange="setScore('${p.id}','screen',this.value)"></td>`:"";
   html+=`<tr class="${rowCls}">`
@@ -209,6 +238,8 @@ function render(){
    +`</tr>`;
  });
  tb.innerHTML=html;
+ // 검색 필터 유지
+ if(searchQuery)applySearch();
 }
 load();loadEvent();render();
 document.getElementById("event-date").addEventListener("change",saveEvent);
