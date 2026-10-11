@@ -1,1 +1,1 @@
-# tournament-board
+# Tournament Board
