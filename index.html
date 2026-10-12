@@ -58,7 +58,7 @@ input.score{width:64px;font-size:17px;padding:10px 4px;text-align:center;border-
 <button id="mode-field" class="btn small" style="flex:1;background:#2a2f3a" onclick="setMode('field')">필드</button>
 <button id="mode-both" class="btn small" style="flex:1" onclick="setMode('both')">스크린+필드</button>
 </div>
-<div style="color:#888;font-size:13px;margin-top:10px">점수는 언더/오버로 입력 (예: -3, E는 0, +2는 2)</div>
+<div style="color:#888;font-size:13px;margin-top:10px">숫자 입력 후 ± 버튼으로 -/+ 전환 (0은 E로 표시)</div>
 </div>
 
 <div class="section">
@@ -251,8 +251,13 @@ function headHTML(){
 }
 function scoreInput(p,which){
  const v=p[which];
- // type="number"는 폰 키보드에 마이너스 키가 안 떠서 type="text"+inputmode="decimal" 사용
- return `<input class="score" type="text" inputmode="decimal" placeholder="0" value="${v??""}" onchange="setScore('${p.id}','${which}',this.value)">`;
+ // 폰 키보드에 마이너스 키가 안 떠서 ± 버튼으로 부호 전환
+ return `<span style="display:inline-flex;gap:2px;align-items:center;white-space:nowrap"><input class="score" type="text" inputmode="decimal" placeholder="0" style="width:46px" value="${v??""}" onchange="setScore('${p.id}','${which}',this.value)"><button class="btn small" style="padding:8px 9px;font-size:15px" onclick="negScore('${p.id}','${which}')">±</button></span>`;
+}
+function negScore(id,which){
+ const p=players.find(x=>x.id===id);if(!p)return;
+ p[which]=(p[which]==null)?0:-p[which];
+ save();render();
 }
 function render(){
  ["screen","field","both"].forEach(m=>{
