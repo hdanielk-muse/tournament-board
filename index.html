@@ -87,7 +87,8 @@ input.score{width:64px;font-size:17px;padding:10px 4px;text-align:center;border-
 <div class="section">
 <h2>📥 엑셀 저장</h2>
 <button class="btn green" onclick="exportCurrent()">지금 순위표 엑셀로 저장</button>
-<button class="btn" onclick="saveTournament()">💾 이 대회 기록으로 저장</button>
+<button id="save-btn" class="btn" onclick="saveTournament()">💾 이 대회 기록으로 저장</button>
+<div id="edit-note" style="display:none;color:#ffd700;font-size:14px;margin-top:8px;text-align:center">📝 저장된 기록 수정 중 <button class="btn small" style="padding:4px 10px;font-size:13px" onclick="cancelEdit()">취소</button></div>
 <button class="btn" onclick="exportSeason()">📊 시즌 누적 엑셀로 저장</button>
 </div>
 
@@ -113,6 +114,7 @@ let sortBy="rank"; // rank | name
 let searchQuery="";
 let history=[]; // {id,date,course,mode,results:[{name,screen,field,total,rank}]}
 let histOpen=null; // 펼쳐본 기록 id
+let editingId=null; // 수정 중인 기록 id
 
 function load(){try{const s=localStorage.getItem(LS_KEY);if(s)players=JSON.parse(s);}catch(e){players=[];}try{const m=localStorage.getItem(MODE_KEY);if(m&&["screen","field","both"].includes(m))mode=m;}catch(e){}try{const h=localStorage.getItem(HIST_KEY);if(h)history=JSON.parse(h);}catch(e){history=[];}}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(players));}catch(e){}}
@@ -261,6 +263,7 @@ function negScore(id,which){
  save();render();
 }
 function render(){
+ updateSaveBtn();
  ["screen","field","both"].forEach(m=>{
   document.getElementById("mode-"+m).style.background=mode===m?"#1f6feb":"#2a2f3a";
  });
@@ -369,19 +372,51 @@ function saveTournament(){
   total:total(p),
   rank:rankMap[p.id]
  }));
- history.unshift({
-  id:uid(),date:e.date,course:e.course,mode:modeLabel(),
-  count:players.length,results:results,savedAt:new Date().toISOString()
- });
- saveHistory();renderHistory();
- // 다음 대회를 위해 점수 초기화 (이름은 유지)
+ const wasEdit=!!editingId;
+ if(wasEdit){
+  const h=history.find(x=>x.id===editingId);
+  if(h){h.date=e.date;h.course=e.course;h.mode=modeLabel();h.modeKey=mode;h.count=players.length;h.results=results;}
+ }else{
+  history.unshift({
+   id:uid(),date:e.date,course:e.course,mode:modeLabel(),modeKey:mode,
+   count:players.length,results:results,savedAt:new Date().toISOString()
+  });
+ }
+ saveHistory();
+ // 입력 초기화 (점수·날짜·골프장 지우고 이름은 유지)
  players.forEach(p=>{p.screen=null;p.field=null;});
- save();render();
- showOk("대회 기록 저장됨 ("+history.length+"개) · 점수 초기화됨");
+ document.getElementById("event-date").value="";
+ document.getElementById("event-course").value="";
+ editingId=null;
+ saveEvent();save();render();renderHistory();updateSaveBtn();
+ showOk(wasEdit?"기록 수정됨":"대회 기록 저장됨 ("+history.length+"개) · 입력 초기화됨");
 }
 function delHistory(id){
  history=history.filter(h=>h.id!==id);
+ if(editingId===id){editingId=null;updateSaveBtn();}
  saveHistory();renderHistory();
+}
+function loadHistory(id){
+ const h=history.find(x=>x.id===id);if(!h)return;
+ if(players.some(p=>p.screen!=null||p.field!=null)){
+  if(!confirm("현재 입력된 점수가 있어. 불러온 기록으로 교체할까?"))return;
+ }
+ players=h.results.map(r=>({id:uid(),name:r.name,screen:r.screen,field:r.field}));
+ document.getElementById("event-date").value=h.date||"";
+ document.getElementById("event-course").value=h.course||"";
+ if(h.modeKey&&["screen","field","both"].includes(h.modeKey)){mode=h.modeKey;saveMode();}
+ editingId=id;histOpen=null;
+ saveEvent();save();updateHeader();render();renderHistory();updateSaveBtn();
+ window.scrollTo({top:0,behavior:"smooth"});
+ showOk("기록을 불러왔어. 수정 후 저장하면 덮어써져");
+}
+function cancelEdit(){editingId=null;updateSaveBtn();render();}
+function updateSaveBtn(){
+ const b=document.getElementById("save-btn");
+ const n=document.getElementById("edit-note");
+ if(!b||!n)return;
+ if(editingId){b.textContent="💾 수정 내용 저장";n.style.display="block";}
+ else{b.textContent="💾 이 대회 기록으로 저장";n.style.display="none";}
 }
 function clearHistory(){
  if(!history.length)return;
@@ -419,7 +454,7 @@ function renderHistory(){
    }).join("");
    detail=`<div style="padding:4px 0 12px"><table style="font-size:14px"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
-  return `<div class="hist-row" onclick="toggleHist('${h.id}')" style="cursor:pointer"><div class="t">${open?"▼":"▶"} ${esc(d)}${c}<div class="c">${esc(h.mode)} · ${h.count}명</div></div><button class="del" onclick="event.stopPropagation();delHistory('${h.id}')">×</button></div>${detail}`;
+  return `<div class="hist-row" onclick="toggleHist('${h.id}')" style="cursor:pointer"><div class="t">${open?"▼":"▶"} ${esc(d)}${c}<div class="c">${esc(h.mode)} · ${h.count}명</div></div><button class="btn small" style="padding:8px 12px;font-size:13px;white-space:nowrap" onclick="event.stopPropagation();loadHistory('${h.id}')">불러오기</button><button class="del" onclick="event.stopPropagation();delHistory('${h.id}')">×</button></div>${detail}`;
  }).join("");
 }
 function toggleHist(id){histOpen=(histOpen===id)?null:id;renderHistory();}
