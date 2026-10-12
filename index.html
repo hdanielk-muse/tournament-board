@@ -374,7 +374,10 @@ function saveTournament(){
   count:players.length,results:results,savedAt:new Date().toISOString()
  });
  saveHistory();renderHistory();
- showOk("대회 기록 저장됨 ("+history.length+"개)");
+ // 다음 대회를 위해 점수 초기화 (이름은 유지)
+ players.forEach(p=>{p.screen=null;p.field=null;});
+ save();render();
+ showOk("대회 기록 저장됨 ("+history.length+"개) · 점수 초기화됨");
 }
 function delHistory(id){
  history=history.filter(h=>h.id!==id);
